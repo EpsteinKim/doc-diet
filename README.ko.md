@@ -1,79 +1,120 @@
 [English](README.md) · **한국어** · [日本語](README.ja.md) · [简体中文](README.zh.md)
 
-# doc-diet
+# doc-diet 🥗
 
-`CLAUDE.md`와 에이전트가 읽는 지식 문서는 계속 불어난다. 내 경우 영역 문서 11개에 공통 문서 하나, 제일 큰 게 4,400줄까지 갔고, 서브에이전트는 뭘 시작하든 그걸 다 읽고 나서야 움직였다. 줄여 쓰면 될 것 같지만, 그러면 뭘 버렸는지, 줄인 게 맞기는 한지 알 수가 없다.
+AI 에이전트나 Claude에게 컨텍스트로 먹이는 지식 문서(`CLAUDE.md` 같은 것), 쓰다 보면 끝도 없이 길어지지 않나요?
 
-doc-diet는 줄이되, 나중에 확인할 수 있게 줄인다. 원본은 `<name>.record.md`로 바이트 하나 안 바뀌고 남는다. 아래에서는 이 파일을 기록이라고 부른다. `<name>.md` 자리에는 지금도 유효한 내용만 담은 요약본(150-300줄)이 들어가고, 줄마다 기록의 어디서 왔는지 적는다. 플러그인은 이 요약본을 head라고 부른다. 그런 다음 새 에이전트가 요약본만 읽고 질문을 받는다. 줄이다 뭘 잃었는지, 그게 아쉬워지기 전에 알 수 있다.
+제가 작업하던 프로젝트에서는 도메인 문서만 11개였고, 제일 큰 문서는 4,400줄이 넘었습니다. 서브 에이전트가 간단한 작업 하나를 시작하려고 해도 이 긴 문서를 매번 처음부터 끝까지 다 읽어야만 했죠. 시작은 느리고 토큰은 줄줄 새고요.
 
-## 설치
+그냥 짧게 줄이면 될 것 같지만, 막상 요약해 버리면 "어떤 내용이 빠졌지?", "요약본이 원본 뜻을 제대로 담고 있나?" 하는 불안이 남습니다.
 
-```
+**`doc-diet`는 이 문제 때문에 만들었습니다.**
+문서를 에이전트가 읽기 좋게 150~300줄로 다이어트하되, 언제든 원본을 찾아볼 수 있게 출처를 남깁니다.
+원본은 단 1바이트도 건드리지 않고 `<name>.record.md` 파일로 그대로 보관하고, 에이전트가 읽는 요약본(플러그인 안에서는 head라고 부릅니다)에는 줄마다 원본의 어느 절에서 가져왔는지 적어 둡니다. 그리고 요약본만 읽은 새 에이전트에게 질문을 던져서, 줄이다 빠진 게 없는지 실제로 확인합니다.
+
+## 📦 설치
+
+플러그인 마켓플레이스로 설치합니다.
+
+```bash
 /plugin marketplace add EpsteinKim/doc-diet
 /plugin install doc-diet@doc-diet
 ```
 
-설치 없이 쓰려면 `claude --plugin-dir /path/to/doc-diet`.
+설치 없이 로컬에서 바로 써 보려면 이렇게 실행하세요.
 
-## 들어 있는 것
-
-### split-doc
-
-Claude에게 파일을 나누라고 하면 이 스킬이 맡는다. 원본을 `<name>.record.md`로 복사하고, `<name>.md`를 요약본으로 다시 쓰고, `scripts/verify-split.sh`를 돌린다. 이 스크립트는 기록을 원본과 `cmp`로 대조한 뒤, 요약본에서 백틱으로 감싼 이름을 전부 기록과 코드에서 grep한다.
-
-### /doc-diet:check
-
-`/doc-diet:check <head-file> [questions...]`는 읽기 전용 에이전트 `doc-tester`에게 요약본만 읽게 한다. 그것만 보고 질문에 답하면서 답마다 in-head / not / ambiguous를 붙이고, 그러고 나서야 코드와 기록을 보고 스스로 right / partial / wrong으로 채점한다.
-
+```bash
+claude --plugin-dir /path/to/doc-diet
 ```
-/doc-diet:check docs/agents/billing.md "Which day basis do refunds use?" "Who may delete an invoice?"
 
+## ✨ 주요 기능
+
+### 1. `split-doc` (문서 분리 스킬)
+
+Claude에게 "이 문서 좀 나눠 줘"라고 하면 이 스킬이 작동합니다.
+원본을 `<name>.record.md`로 복사해 두고, 기존 파일 자리에는 요약본을 새로 씁니다. 작업이 끝나면 `scripts/verify-split.sh`가 돌면서 두 가지를 확인합니다. 백업이 원본과 완전히 같은지 `cmp`로 대조하고, 요약본에 적힌 백틱 이름(파일명, 함수명, 설정 키)이 실제로 원본이나 코드에 있는지 grep으로 찾아봅니다. AI가 없는 이름을 지어내진 않았는지 보는 거죠.
+
+### 2. `/doc-diet:check` (누락 테스트)
+
+요약본만 보고도 에이전트가 제대로 답할 수 있는지 테스트하는 명령어입니다.
+`doc-tester`라는 읽기 전용 에이전트가 요약본만 읽고 사용자의 질문에 답합니다. 답마다 "요약본에 있었다 / 없었다 / 애매하다"를 표시한 뒤에야 원본(record)과 코드를 열어 보고, 자기 답이 맞았는지(right / partial / wrong) 채점합니다.
+
+**사용 예시:**
+
+```bash
+/doc-diet:check docs/agents/billing.md "환불 기준일은 언제야?" "인보이스는 누가 지울 수 있어?"
+```
+
+**결과 예시:**
+
+```text
 # | question            | in-head | grade | correct answer
-1 | refund day basis    | in-head | right |
-2 | who may delete      | not     | wrong | finance role only (record §14)
-What the head should have had: the delete-permission rule.
+1 | 환불 기준일          | in-head | right |
+2 | 인보이스 삭제 권한    | not     | wrong | finance 권한만 가능 (record §14)
+What the head should have had: 삭제 권한 규칙
 ```
 
-질문은 직접 주거나, 결정 문서를 가리켜서 거기서 고르게 한다. 전에 한 번 틀렸던 일에 대한 질문이 제일 잘 먹힌다. 결정 문서 없이 질문을 만들어 내는 건 0.2.0에 넣을 예정이다.
+질문은 직접 주거나, 결정 문서를 가리켜서 거기서 뽑게 할 수 있습니다. 결정 문서 없이 질문을 자동으로 만드는 건 0.2.0에 넣을 예정입니다.
 
-### keep-heads-fresh
+*Tip: 예전에 AI가 한 번 틀렸던 엣지 케이스를 질문으로 던져 보면 효과가 아주 좋습니다.*
 
-규칙 세 개. 결정을 결정 문서에 적으면 그 턴에 요약본에도 넣는다. 판정이 틀린 걸로 드러나면 기록에서 지우지 말고 줄을 긋는다. 요약본은 300줄 아래로 유지한다.
+### 3. `keep-heads-fresh` (최신화 규칙)
 
-## 훅
+결정 문서가 바뀌면 요약본도 잊지 않고 따라가도록 하는 규칙 3가지입니다.
 
-훅 두 개. 컨텍스트에 몇 줄 덧붙일 뿐 파일은 건드리지 않는다. PATH에 `node`가 있어야 하고 없으면 아무것도 안 한다. 기록 파일을 알리는 줄은 세션을 열 때마다 뜨고, 나머지는 세션마다 파일마다 한 번만 뜬다. 상태는 `${CLAUDE_PLUGIN_DATA}`(없으면 `$TMPDIR`)에 세션 id나 날짜별로 저장한다.
+1. 결정을 문서에 적으면, 같은 턴에 요약본에도 반영합니다.
+2. 틀린 걸로 드러난 판정은 원본에서 지우지 않고 취소선을 긋습니다.
+3. 요약본은 항상 300줄 아래로 유지합니다.
 
-세션이 시작할 때:
+## 🪝 훅 (Hooks)
 
-- 프로젝트에 기록 파일이 있으면, 요약본은 끝까지 읽고 기록은 `(record §N)`을 따라갈 때만 grep하라고 Claude에게 알린다
-- `CLAUDE.md`, `AGENTS.md`, `.claude/` 아래 파일, 또는 `docGlobs`에 맞는 파일이 `bigDocLines`보다 길거나 `bigDocBytes`보다 큰데 기록이 없으면, 나누자고 제안한다
-- 어떤 요약본을 마지막으로 `/doc-diet:check`한 뒤로 그 파일을 건드린 커밋이 `measureAfterCommits`개 이상이면, 다시 확인하자고 제안한다(요약본 20개까지만 본다)
+에이전트가 일하는 동안 뒤에서 컨텍스트 몇 줄을 찔러 넣어 주는 훅입니다. 파일을 직접 건드리지는 않고, 시스템에 `node`가 있어야 작동합니다(없으면 아무것도 안 합니다).
 
-Edit, Write, MultiEdit 뒤에:
+**세션이 시작될 때:**
 
-- 그 파일이 요약본인데 `maxHeadLines`를 넘었으면 그렇다고 알린다
-- 그 파일이 `decisionGlobs`에 맞으면(기본값은 없음, 아래 예시는 `docs/decisions/`에 켜 둔 것) 이번 턴에 규칙을 요약본에 넣으라고 Claude에게 알린다
+* 프로젝트에 `.record.md` 파일이 있으면, Claude에게 "요약본은 끝까지 읽고, 원본은 `(record §N)` 출처를 따라갈 때만 grep하라"고 알려 줍니다. 이건 세션을 열 때마다 뜹니다.
+* `CLAUDE.md`, `AGENTS.md`, `.claude/` 아래 문서가 너무 큰데(기본 300줄 또는 30KB 초과) 백업본이 없으면 "문서를 나누는 게 어때?"라고 제안합니다.
+* 어떤 요약본을 마지막으로 테스트한 뒤 그 파일을 건드린 커밋이 5개 이상 쌓였으면 `/doc-diet:check`를 해 보라고 넌지시 알려 줍니다. 요약본 20개까지만 봅니다.
 
-`/doc-diet:check`는 실행한 시점의 커밋을 `scripts/mark-checked.mjs`로 `.doc-diet/last-check.json`에 적는다. 그 파일은 커밋하든 무시하든 상관없다. 시작할 때의 스캔은 디렉터리 6단계까지만 내려가고, `node_modules`, `.git`, `dist`, `build`, `.next`, `.venv`, `vendor`, `target`은 건너뛰며, 파일 5,000개짜리 트리에서 50 ms 정도 걸린다.
+**문서가 수정된(Edit/Write) 직후:**
 
-설정은 프로젝트 루트의 `.doc-diet.json`에 둔다. 키는 전부 선택 사항이다. 아래는 기본값이 아니라 예시이고, `decisionGlobs`는 따로 넣지 않으면 비어 있다.
+* 요약본이 제한 줄 수(기본 300줄)를 넘어가면 알려 줍니다.
+* `decisionGlobs`에 지정해 둔 결정 문서가 수정되면, 이번 턴에 요약본에도 규칙을 반영하라고 리마인드합니다.
+
+"요약본 있음" 안내를 빼면 나머지 알림은 세션마다 파일마다 한 번만 뜹니다. `/doc-diet:check`를 돌리면 `.doc-diet/last-check.json`에 그때의 커밋이 적혀서 커밋 카운트가 다시 0부터 시작합니다. 이 파일은 커밋하든 gitignore하든 상관없습니다.
+
+## ⚙️ 설정 (`.doc-diet.json`)
+
+프로젝트 루트에 `.doc-diet.json`을 만들면 기본값을 바꿀 수 있습니다. 모든 키는 선택 사항이고, 아래는 예시입니다(`decisionGlobs`는 따로 넣지 않으면 비어 있습니다).
 
 ```json
-{ "recordSuffix": ".record.md", "maxHeadLines": 300, "bigDocLines": 300, "bigDocBytes": 30000,
-  "docGlobs": [], "decisionGlobs": ["docs/decisions/*.md"], "measureAfterCommits": 5 }
+{
+  "recordSuffix": ".record.md",
+  "maxHeadLines": 300,
+  "bigDocLines": 300,
+  "bigDocBytes": 30000,
+  "docGlobs": [],
+  "decisionGlobs": ["docs/decisions/*.md"],
+  "measureAfterCommits": 5
+}
 ```
 
-glob은 프로젝트 루트 기준이다. 기록 파일 이름이 다르면 `recordSuffix`를 바꾸면 된다(`.history.md`나 `.기록.md` 같은 것).
+*백업 파일 이름 규칙을 다르게 쓰고 싶다면 `recordSuffix`를 `.history.md`나 `.기록.md`로 바꾸면 됩니다.*
 
-## 써 보니
+## 💡 써 보고 느낀 점
 
-위 프로젝트에서 영역 담당 에이전트가 시작할 때 읽는 양이 440 KB쯤에서 70 KB쯤으로 줄었고, 시간을 재 본 영역 문서 세 개는 읽는 데 각각 2-5초 걸렸다. 더 쓸모 있었던 건 세 번째 확인이었다. 요약본에 없던 규칙 둘이 나왔다. 하나는 요약하다 빠진 예외였다. 다른 하나는 전날 정해졌는데 아무도 반영하지 않은 결정이었다. `keep-heads-fresh`가 생긴 이유다.
+실제 프로젝트에 적용해 보니 도메인 담당 에이전트가 시작할 때 읽는 양이 **440KB에서 70KB 수준으로 뚝 떨어졌습니다.** 시간을 재 본 문서 세 개는 읽는 데 각각 2~5초 정도 걸렸고요.
 
-## 알아둘 것
+가장 유용했던 건 `/doc-diet:check`였습니다. 세 번째 테스트에서 요약하다 날아간 예외 하나와, 전날 정해 놓고 아무도 요약본에 반영하지 않은 결정 하나를 찾아냈습니다. `keep-heads-fresh` 규칙은 그 두 번째 것 때문에 생겼습니다.
 
-위의 시간은 에이전트가 스스로 보고한 값이다. `/doc-diet:check`는 물어본 것만 확인한다. 요약본 자체가 맞는지는 아무도 검사하지 않으니 직접 읽어 봐야 한다.
+**🚨 주의:** 위 시간은 에이전트가 스스로 보고한 값입니다. 그리고 `/doc-diet:check`는 사용자가 던진 질문에 대해서만 검사합니다. 요약본 자체가 맞는지는 아무도 대신 봐 주지 않으니, 결국 개발자가 한 번은 쓱 훑어봐야 합니다.
 
-이름이 비슷한 것들: `agent-md-refactor`(softaworks/agent-toolkit)는 문서를 나누긴 하는데 내용을 쳐내고 검증은 안 한다. `claude-token-diet`(MUKE-coder)는 토큰 절감 설정 모음이다. claude-mem, Mem0, Hindsight는 문서가 아니라 대화를 저장한다.
+## 🤔 비슷한 도구들과의 차이
 
-MIT.
+* `agent-md-refactor` (softaworks/agent-toolkit): 문서를 쪼개 주긴 하지만, 정리하면서 내용을 쳐내고 검증은 없습니다.
+* `claude-token-diet` (MUKE-coder): 프로그램이라기보다 토큰 절약을 위한 설정 모음에 가깝습니다.
+* claude-mem, Mem0, Hindsight: 지식 문서가 아니라 대화 히스토리를 저장하는 용도입니다.
+
+## 📄 License
+
+MIT
