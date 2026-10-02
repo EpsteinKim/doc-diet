@@ -1,0 +1,17 @@
+{
+  "name": "doc-diet",
+  "owner": {
+    "name": "YeongSin"
+  },
+  "plugins": [
+    {
+      "name": "doc-diet",
+      "source": "./",
+      "description": "Slim agent docs losslessly and measure that the slim version still works.",
+      "version": "0.1.0"
+    }
+  ],
+  "metadata": {
+    "description": "Slim agent docs losslessly and measure that the slim version still works."
+  }
+}
