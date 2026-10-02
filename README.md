@@ -1,12 +1,10 @@
-**English** · [한국어](README.ko.md) · [日本語](README.ja.md)
+**English** · [한국어](README.ko.md) · [日本語](README.ja.md) · [简体中文](README.zh.md)
 
 # doc-diet
 
-Slim down the docs your AI agents read (`CLAUDE.md`, per-area knowledge files) **losslessly**, then **measure** that a fresh agent reading only the slim version still answers correctly.
+`CLAUDE.md` and the knowledge files your agents read keep growing. Mine got to 11 area docs plus a shared one, the biggest at 4,400 lines, and every subagent read the whole pile before starting on anything. Summarising is the obvious answer, but then you can't tell what was thrown away, or whether the summary is right.
 
-## Why
-
-Long-lived projects grow agent docs into thousands of lines: history, measurements, bugs already fixed. Every session or subagent reads all of it, so startup is slow, context fills early, and the live rules drown in backstory. Summarising fixes the size but leaves two questions unanswerable: *what did we lose?* and *is the summary right?* doc-diet answers both mechanically.
+doc-diet does the cut in a way you can check afterwards. The original is kept, byte for byte, as `<name>.record.md`. A short version of `<name>.md` (150-300 lines) replaces it with only what is still true, each line pointing back to where it came from in the record. The plugin calls the short version the head. Then a fresh agent reads the head on its own and gets asked questions, so you find out what the cut lost before you need it.
 
 ## Install
 
@@ -15,13 +13,17 @@ Long-lived projects grow agent docs into thousands of lines: history, measuremen
 /plugin install doc-diet@doc-diet
 ```
 
-Local try-out: `claude --plugin-dir /path/to/doc-diet`.
+Or without installing: `claude --plugin-dir /path/to/doc-diet`.
 
-## Features
+## What's in it
 
-**1. Split a doc (skill `split-doc`).** Ask Claude to split a long doc. It copies the original byte-for-byte to `<name>.record.md`, rewrites `<name>.md` as a 150-300 line head (rules that are true now, pitfalls, decisions, open items; each line ends with `(record §N)`), and runs `scripts/verify-split.sh`: `cmp` proves the record is identical to the original, and backtick names in the head are grep-checked against the record and code.
+### split-doc
 
-**2. Measure comprehension (`/doc-diet:check <head-file> [questions...]`).** A read-only `doc-tester` agent reads only the head (timed, bytes counted), answers your questions marking each *in-head / not / ambiguous*, then greps code and record to grade *right / partial / wrong*.
+Ask Claude to split a file and this skill takes over. It copies the original to `<name>.record.md`, rewrites `<name>.md` as the head, and runs `scripts/verify-split.sh`. The script runs `cmp` on the record against the original, then greps every backticked name in the head against the record and your code.
+
+### /doc-diet:check
+
+`/doc-diet:check <head-file> [questions...]` sends a read-only agent called `doc-tester` to read the head and nothing else. It answers your questions from that alone, marks each answer in-head / not / ambiguous, and only afterwards goes to the code and the record to grade itself right / partial / wrong.
 
 ```
 /doc-diet:check docs/agents/billing.md "Which day basis do refunds use?" "Who may delete an invoice?"
@@ -32,49 +34,46 @@ Local try-out: `claude --plugin-dir /path/to/doc-diet`.
 What the head should have had: the delete-permission rule.
 ```
 
-Also included: a `keep-heads-fresh` skill with the maintenance rules (decision goes into the head the same turn, strike wrong verdicts in the record, 300-line cap), and hooks that nudge so you do not have to ask (below).
+You supply the questions, or point it at a decisions file and let it pick some. Questions about things that went wrong before work best. Generating them automatically is planned for 0.2.0.
 
-## Automatic nudges
+### keep-heads-fresh
 
-Hooks only add a line of context for Claude; they never split or edit a doc. Needs `node` on PATH (silently does nothing without it). Each nudge fires at most once per session and per file (state in `${CLAUDE_PLUGIN_DATA}`, else `$TMPDIR`, keyed by session id, else by calendar day).
+Three rules: when you record a decision, put it in the head in the same turn; when a verdict turns out wrong, strike it through in the record instead of deleting it; keep the head under 300 lines.
 
-| When | Fires if | Says |
-|---|---|---|
-| SessionStart | project has records | read heads in full, grep records on demand (every start) |
-| SessionStart | `CLAUDE.md`, `AGENTS.md`, `.claude/**/*.md` or `docGlobs` file exceeds `bigDocLines` or `bigDocBytes` and has no record | suggest `split-doc` |
-| SessionStart | a head changed in `measureAfterCommits`+ git commits since its last `/doc-diet:check` | suggest `/doc-diet:check <head>` |
-| After Edit/Write/MultiEdit | an edited head (has a record) is over `maxHeadLines` | move detail into the record |
-| After Edit/Write/MultiEdit | the file matches `decisionGlobs` (off by default) | put the rule into the head this turn |
+## Hooks
 
-`/doc-diet:check` writes `.doc-diet/last-check.json` (head path to git commit) via `scripts/mark-checked.mjs`; commit it or gitignore it as you like. The session scan is depth-limited (6) and skips `node_modules`, `.git`, `dist`, `build`, `.next`, `.venv`, `vendor`, `target`; about 50 ms on a 5,000-file tree.
+Two hooks. Each adds one line of context and never touches a file. They need `node` on PATH and stay silent without it. Each one fires once per session per file, with state kept in `${CLAUDE_PLUGIN_DATA}` or, if that is unset, `$TMPDIR`, keyed by session id or by date.
 
-### Config: `.doc-diet.json` (optional, project root, all keys optional)
+When a session starts:
+
+- if the project has record files, Claude is told to read heads in full and to grep a record only when following a `(record §N)` pointer
+- if `CLAUDE.md`, `AGENTS.md`, a file under `.claude/`, or a `docGlobs` match is longer than `bigDocLines` or bigger than `bigDocBytes` and has no record, it suggests a split
+- if a head has changed in `measureAfterCommits` or more commits since its last `/doc-diet:check`, it suggests checking again
+
+After Edit, Write or MultiEdit:
+
+- if the file is a head and now exceeds `maxHeadLines`, it says so
+- if the file matches `decisionGlobs` (nothing by default; the example below turns it on for `docs/decisions/`), it reminds Claude to put the rule into the head this turn
+
+`/doc-diet:check` saves the commit it ran at in `.doc-diet/last-check.json` via `scripts/mark-checked.mjs`. Commit that file or ignore it. The startup scan goes 6 directories deep, skips `node_modules`, `.git`, `dist`, `build`, `.next`, `.venv`, `vendor` and `target`, and takes around 50 ms on a 5,000-file tree.
+
+Settings live in `.doc-diet.json` at the project root. All keys are optional:
 
 ```json
 { "recordSuffix": ".record.md", "maxHeadLines": 300, "bigDocLines": 300, "bigDocBytes": 30000,
   "docGlobs": [], "decisionGlobs": ["docs/decisions/*.md"], "measureAfterCommits": 5 }
 ```
 
-Globs are relative to the project root (`*` within a folder, `**` across folders). Use `recordSuffix` for projects that name records differently, e.g. `.history.md`.
+Globs are relative to the project root. If your records are called something else, change `recordSuffix` (`.history.md`, for example).
 
-## Results (hand-applied, anonymised)
+## How it went
 
-On one internal business web app with 11 area docs plus a shared doc (largest 4,400 lines): what an owner reads at start dropped from about 440 KB to about 70 KB (roughly 1/6), three docs read in 2-5 seconds. The third measurement round found two important rules missing from the heads: an exception lost while summarising, and a decision made the day before that had not reached the head yet.
+On the project above, what an owner reads at startup dropped from about 440 KB to about 70 KB; the three area docs I timed read in 2-5 seconds each. More useful: the third round of checks found two rules missing from the heads. One was an exception lost in summarising. The other was a decision from the day before that nobody had copied over. That's why `keep-heads-fresh` exists.
 
-## Compared with similar tools
+## Caveats
 
-- `agent-md-refactor` (softaworks/agent-toolkit): splits a big doc into linked files; prunes as it goes, no verification.
-- `claude-token-diet` (MUKE-coder): a bundle of token-saving settings (deny rules, slimmer CLAUDE.md, LSP). Similar name, different thing.
-- claude-mem / Mem0 / Hindsight: memory of conversations and work history; different target.
-- **doc-diet only:** lossless archive proven with `cmp`, fresh-agent comprehension measurement with grading, and a list of places where the doc disagrees with the code.
+The timings above are self-reported by the agent. It only tests what you ask about. Nothing checks whether the head is right, so read it.
 
-## Limitations
+Similar names: `agent-md-refactor` (softaworks/agent-toolkit) splits a doc but prunes and doesn't verify. `claude-token-diet` (MUKE-coder) is a set of token-saving settings. claude-mem, Mem0 and Hindsight store chats, not docs.
 
-- Context-percent and timing figures come from the agent itself and are self-reported.
-- The measurement is only as good as the questions: use questions with known answers, ideally from real past mistakes.
-- Questions are not auto-generated yet (planned for 0.2.0).
-- The head is written by Claude; review it, the `cmp` check only protects the record.
-
-## License
-
-MIT
+MIT.

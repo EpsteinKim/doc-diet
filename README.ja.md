@@ -1,12 +1,10 @@
-[English](README.md) · [한국어](README.ko.md) · **日本語**
+[English](README.md) · [한국어](README.ko.md) · **日本語** · [简体中文](README.zh.md)
 
 # doc-diet
 
-AI エージェントが読むドキュメント（`CLAUDE.md`、領域ごとの知識ファイル）を**ロスレスに短くし**、短い版だけを読んだ新しいエージェントが**まだ正しく答えられるかを測る**。
+`CLAUDE.md` とエージェントが読む知識ファイルは増え続ける。自分の場合、領域ドキュメント 11 本と共通ドキュメント 1 本、いちばん大きいもので 4,400 行になり、サブエージェントは何を始めるにもまずその山を全部読んでいた。短くまとめればいいようでいて、それだと何を捨てたのか、まとめが合っているのかが分からない。
 
-## なぜ
-
-長く続くプロジェクトでは、エージェント向けドキュメントが数千行に膨らむ。経緯、計測値、すでに直したバグの話。セッションやサブエージェントはそのたびに全部を読むので、起動が遅く、コンテキストが早く埋まり、今有効なルールが経緯に埋もれる。要約すればサイズは減るが、二つの問いに答えられない。*何を失ったか？* *要約は正しいか？* doc-diet はこの二つを機械的に答える。
+doc-diet は削るが、あとから確かめられるように削る。原本は `<name>.record.md` として 1 バイトも変えずに残す。以下ではこれを記録と呼ぶ。`<name>.md` の場所には、今も有効な内容だけを入れた短縮版（150〜300 行）が入り、各行に記録のどこから来たかを書く。プラグインはこの短縮版を head と呼ぶ。そのうえで新しいエージェントが短縮版だけを読んで質問に答える。なので、削って何が抜けたかは困る前に分かる。
 
 ## インストール
 
@@ -15,16 +13,20 @@ AI エージェントが読むドキュメント（`CLAUDE.md`、領域ごとの
 /plugin install doc-diet@doc-diet
 ```
 
-インストールせずに試す: `claude --plugin-dir /path/to/doc-diet`。
+インストールせずに使うなら `claude --plugin-dir /path/to/doc-diet`。
 
-## 機能
+## 入っているもの
 
-**1. ドキュメントを分ける（スキル `split-doc`）。** Claude に長いドキュメントを分けるよう頼む。原本を `<name>.record.md` にバイト単位でそのままコピーし、`<name>.md` を 150〜300 行のヘッド（今有効なルール、落とし穴、決定、未解決事項。各行末に `(record §N)`）として書き直し、`scripts/verify-split.sh` を実行する。`cmp` でレコードが原本と同一であることを証明し、ヘッド内のバッククォート名がレコードとコードに実在するかを grep で確認する。
+### split-doc
 
-**2. 理解度の計測（`/doc-diet:check <head-file> [questions...]`）。** 読み取り専用の `doc-tester` エージェントがヘッドだけを読み（時間とバイト数を記録）、質問に答えてそれぞれ *in-head / not / ambiguous* を付け、その後コードとレコードを grep して *right / partial / wrong* で採点する。
+Claude にファイルを分けるよう頼むと、このスキルが引き受ける。原本を `<name>.record.md` にコピーし、`<name>.md` を短縮版として書き直し、`scripts/verify-split.sh` を実行する。スクリプトは記録を原本と `cmp` で突き合わせ、そのあと短縮版にあるバッククォートで囲んだ名前をすべて記録とコードから grep する。
+
+### /doc-diet:check
+
+`/doc-diet:check <head-file> [questions...]` は読み取り専用のエージェント `doc-tester` に短縮版だけを読ませる。それだけを見て質問に答え、答えごとに in-head / not / ambiguous を付け、そのあとでようやくコードと記録を見て right / partial / wrong で自己採点する。
 
 ```
-/doc-diet:check docs/agents/billing.md "返金はどの日数基準を使う？" "請求書を削除できるのは誰？"
+/doc-diet:check docs/agents/billing.md "Which day basis do refunds use?" "Who may delete an invoice?"
 
 # | question            | in-head | grade | correct answer
 1 | refund day basis    | in-head | right |
@@ -32,49 +34,46 @@ AI エージェントが読むドキュメント（`CLAUDE.md`、領域ごとの
 What the head should have had: the delete-permission rule.
 ```
 
-ほかに、維持ルールをまとめた `keep-heads-fresh` スキル（決定は同じターンでヘッドに入れる、誤った判定はレコードで取り消し線を引く、300 行の上限）と、頼まなくても知らせるフック（下記）が入っている。
+質問は自分で渡すか、決定をまとめたファイルを指してそこから選ばせる。前に一度間違えたことについての質問がいちばん効く。自動生成は 0.2.0 で入れる予定。
 
-## 自動の知らせ
+### keep-heads-fresh
 
-フックは Claude にコンテキストを一行足すだけで、ドキュメントを分けたり編集したりはしない。PATH に `node` が必要（なければ黙って何もしない）。知らせはセッションごと、ファイルごとに一度だけ（状態は `${CLAUDE_PLUGIN_DATA}`、なければ `$TMPDIR` に、セッション id か日付をキーに保存）。
+ルールは三つある。決定をファイルに書いたら、同じターンで短縮版にも入れる。判定が間違っていたと分かったら、記録から消さずに取り消し線を引く。短縮版は 300 行未満に保つ。
 
-| タイミング | 条件 | 内容 |
-|---|---|---|
-| SessionStart | プロジェクトにレコードがある | ヘッドは全部読み、レコードは必要なときだけ grep（毎回） |
-| SessionStart | `CLAUDE.md`、`AGENTS.md`、`.claude/**/*.md` または `docGlobs` のファイルが `bigDocLines` か `bigDocBytes` を超え、レコードがない | `split-doc` を提案 |
-| SessionStart | 最後の `/doc-diet:check` 以降、ヘッドが `measureAfterCommits` 回以上のコミットで変わった | `/doc-diet:check <head>` を提案 |
-| Edit/Write/MultiEdit の後 | 編集したヘッド（レコードがあるもの）が `maxHeadLines` を超えた | 詳細をレコードへ移すよう知らせる |
-| Edit/Write/MultiEdit の後 | ファイルが `decisionGlobs` に一致（既定はオフ） | このターンでルールをヘッドに入れるよう知らせる |
+## フック
 
-`/doc-diet:check` は `scripts/mark-checked.mjs` で `.doc-diet/last-check.json`（ヘッドのパス → git コミット）を書く。コミットしても gitignore しても構わない。セッション開始時のスキャンは深さ 6 までで、`node_modules`、`.git`、`dist`、`build`、`.next`、`.venv`、`vendor`、`target` を飛ばす。5,000 ファイルのツリーで約 50 ms。
+フックは二つある。それぞれコンテキストを 1 行足すだけで、ファイルには触らない。PATH に `node` が必要で、なければ何もしない。通知はセッションごと、ファイルごとに 1 回だけ。状態は `${CLAUDE_PLUGIN_DATA}`（未設定なら `$TMPDIR`）に、セッション ID か日付をキーにして保存する。
 
-### 設定: `.doc-diet.json`（任意、プロジェクトルート、すべてのキーは任意）
+セッション開始時:
+
+- プロジェクトに記録ファイルがあれば、短縮版は全部読み、記録は `(record §N)` をたどるときだけ grep するよう Claude に伝える
+- `CLAUDE.md`、`AGENTS.md`、`.claude/` 以下のファイル、または `docGlobs` に合うファイルが `bigDocLines` より長いか `bigDocBytes` より大きく、記録がなければ、分割を提案する
+- ある短縮版を前回 `/doc-diet:check` してから、そのファイルに触れたコミットが `measureAfterCommits` 回以上あれば、もう一度確認するよう提案する
+
+Edit、Write、MultiEdit のあと:
+
+- そのファイルが短縮版で `maxHeadLines` を超えたなら、そう警告する
+- そのファイルが `decisionGlobs` に合うなら（既定は空、下の例では `docs/decisions/` に対して有効にしている）、このターンでルールを短縮版に入れるよう Claude に伝える
+
+`/doc-diet:check` は実行時点のコミットを `scripts/mark-checked.mjs` 経由で `.doc-diet/last-check.json` に保存する。このファイルはコミットしても無視してもいい。開始時のスキャンはディレクトリ 6 階層まで、`node_modules`、`.git`、`dist`、`build`、`.next`、`.venv`、`vendor`、`target` は飛ばし、5,000 ファイルのツリーで 50 ms ほどかかる。
+
+設定はプロジェクトルートの `.doc-diet.json` に置く。キーはすべて任意。
 
 ```json
 { "recordSuffix": ".record.md", "maxHeadLines": 300, "bigDocLines": 300, "bigDocBytes": 30000,
   "docGlobs": [], "decisionGlobs": ["docs/decisions/*.md"], "measureAfterCommits": 5 }
 ```
 
-グロブはプロジェクトルート基準（`*` はフォルダ内、`**` はフォルダをまたぐ）。レコードの命名が違うプロジェクトでは `recordSuffix` を使う。例: `.history.md`、`.記録.md`。
+glob はプロジェクトルート基準。記録ファイルの名前が違うなら `recordSuffix` を変える（`.history.md` や `.記録.md` など）。
 
-## 実際の結果（手作業で適用、匿名化）
+## 使ってみて
 
-業務用 Web アプリ一つ、領域ドキュメント 11 本と共通ドキュメント（最大 4,400 行）に適用した。担当が開始時に読む量が約 440 KB から約 70 KB（約 1/6）に減り、三つのドキュメントを 2〜5 秒で読む。三回目の計測でヘッドから抜けていた重要なルールを二つ見つけた。要約で落ちた例外が一つと、前日に決まったがまだヘッドに入っていなかった決定が一つ。
+上のプロジェクトで、各領域の担当エージェントが開始時に読む量は 440 KB ほどから 70 KB ほどに減り、時間を測った領域ドキュメント 3 本はそれぞれ 2〜5 秒で読めた。それより役に立ったのは 3 回目の確認で、短縮版から抜けていたルールが 2 つ出てきたこと。1 つはまとめる途中で落ちた例外。もう 1 つは前日に決まったのに誰も反映していなかった決定。`keep-heads-fresh` があるのはそのため。
 
-## 似たツールとの比較
+## 注意
 
-- `agent-md-refactor`（softaworks/agent-toolkit）: 大きなドキュメントをリンクされたファイルに分ける。整理しながら削り、検証はない。
-- `claude-token-diet`（MUKE-coder）: トークン節約設定の詰め合わせ（拒否ルール、薄い CLAUDE.md、LSP）。名前が似ているだけで別物。
-- claude-mem / Mem0 / Hindsight: 会話と作業履歴のメモリ。対象が違う。
-- **doc-diet だけのもの:** `cmp` で証明するロスレスの保管、新しいエージェントの理解度計測と採点、ドキュメントがコードと食い違う箇所の一覧。
+上の時間はエージェントの自己申告。`/doc-diet:check` が確かめるのは質問した内容だけ。短縮版そのものが正しいかどうかはこのプラグインでは確かめないので、自分で読むこと。
 
-## 制限
+名前が似ているもの: `agent-md-refactor`（softaworks/agent-toolkit）はドキュメントを分けるが、中身を削りながら分けて検証はしない。`claude-token-diet`（MUKE-coder）はトークン節約設定のセット。claude-mem、Mem0、Hindsight が保存するのは会話で、ドキュメントではない。
 
-- コンテキスト比率と時間はエージェントの自己申告。
-- 計測は質問の質まで。答えが決まっている質問、できれば実際の過去の失敗から取った質問を使う。
-- 質問の自動生成はまだない（0.2.0 予定）。
-- ヘッドは Claude が書く。レビューすること。`cmp` が守るのはレコードだけ。
-
-## ライセンス
-
-MIT
+MIT.
