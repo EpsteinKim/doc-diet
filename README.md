@@ -1,3 +1,5 @@
+**English** · [한국어](README.ko.md) · [日本語](README.ja.md)
+
 # doc-diet
 
 Slim down the docs your AI agents read (`CLAUDE.md`, per-area knowledge files) **losslessly**, then **measure** that a fresh agent reading only the slim version still answers correctly.
