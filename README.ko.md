@@ -34,7 +34,7 @@ Claude에게 파일을 나누라고 하면 이 스킬이 맡는다. 원본을 `<
 What the head should have had: the delete-permission rule.
 ```
 
-질문은 직접 주거나, 결정 문서를 가리켜서 거기서 고르게 한다. 전에 한 번 틀렸던 일에 대한 질문이 제일 잘 먹힌다. 자동 생성은 0.2.0에 넣을 예정이다.
+질문은 직접 주거나, 결정 문서를 가리켜서 거기서 고르게 한다. 전에 한 번 틀렸던 일에 대한 질문이 제일 잘 먹힌다. 결정 문서 없이 질문을 만들어 내는 건 0.2.0에 넣을 예정이다.
 
 ### keep-heads-fresh
 
@@ -42,13 +42,13 @@ What the head should have had: the delete-permission rule.
 
 ## 훅
 
-훅 두 개. 각각 컨텍스트에 한 줄 덧붙일 뿐 파일은 건드리지 않는다. PATH에 `node`가 있어야 하고 없으면 아무것도 안 한다. 세션마다 파일마다 한 번만 뜨고, 상태는 `${CLAUDE_PLUGIN_DATA}`(없으면 `$TMPDIR`)에 세션 id나 날짜별로 저장한다.
+훅 두 개. 컨텍스트에 몇 줄 덧붙일 뿐 파일은 건드리지 않는다. PATH에 `node`가 있어야 하고 없으면 아무것도 안 한다. 기록 파일을 알리는 줄은 세션을 열 때마다 뜨고, 나머지는 세션마다 파일마다 한 번만 뜬다. 상태는 `${CLAUDE_PLUGIN_DATA}`(없으면 `$TMPDIR`)에 세션 id나 날짜별로 저장한다.
 
 세션이 시작할 때:
 
 - 프로젝트에 기록 파일이 있으면, 요약본은 끝까지 읽고 기록은 `(record §N)`을 따라갈 때만 grep하라고 Claude에게 알린다
 - `CLAUDE.md`, `AGENTS.md`, `.claude/` 아래 파일, 또는 `docGlobs`에 맞는 파일이 `bigDocLines`보다 길거나 `bigDocBytes`보다 큰데 기록이 없으면, 나누자고 제안한다
-- 어떤 요약본을 마지막으로 `/doc-diet:check`한 뒤로 그 파일을 건드린 커밋이 `measureAfterCommits`개 이상이면, 다시 확인하자고 제안한다
+- 어떤 요약본을 마지막으로 `/doc-diet:check`한 뒤로 그 파일을 건드린 커밋이 `measureAfterCommits`개 이상이면, 다시 확인하자고 제안한다(요약본 20개까지만 본다)
 
 Edit, Write, MultiEdit 뒤에:
 
@@ -57,7 +57,7 @@ Edit, Write, MultiEdit 뒤에:
 
 `/doc-diet:check`는 실행한 시점의 커밋을 `scripts/mark-checked.mjs`로 `.doc-diet/last-check.json`에 적는다. 그 파일은 커밋하든 무시하든 상관없다. 시작할 때의 스캔은 디렉터리 6단계까지만 내려가고, `node_modules`, `.git`, `dist`, `build`, `.next`, `.venv`, `vendor`, `target`은 건너뛰며, 파일 5,000개짜리 트리에서 50 ms 정도 걸린다.
 
-설정은 프로젝트 루트의 `.doc-diet.json`에 둔다. 키는 전부 선택 사항이다.
+설정은 프로젝트 루트의 `.doc-diet.json`에 둔다. 키는 전부 선택 사항이다. 아래는 기본값이 아니라 예시이고, `decisionGlobs`는 따로 넣지 않으면 비어 있다.
 
 ```json
 { "recordSuffix": ".record.md", "maxHeadLines": 300, "bigDocLines": 300, "bigDocBytes": 30000,

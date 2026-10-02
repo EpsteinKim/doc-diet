@@ -34,7 +34,7 @@ doc-diet 也是删，但删完能核对。原文一个字节不动，留作 `<na
 What the head should have had: the delete-permission rule.
 ```
 
-问题你来给，或者指一份决策文件让它自己挑。问以前出过错的事效果最好。自动出题打算放在 0.2.0。
+问题你来给，或者指一份决策文件让它自己挑。问以前出过错的事效果最好。不给决策文件也能自动出题，打算放在 0.2.0。
 
 ### keep-heads-fresh
 
@@ -42,13 +42,13 @@ What the head should have had: the delete-permission rule.
 
 ## 钩子
 
-两个钩子。各加一行上下文，不碰文件。需要 PATH 里有 `node`，没有就不出声。每个会话每个文件只触发一次，状态放在 `${CLAUDE_PLUGIN_DATA}`，没设就放 `$TMPDIR`，以会话 id 或日期为键。
+两个钩子。加几行上下文，不碰文件。需要 PATH 里有 `node`，没有就不出声。提示有存档文件的那一行每次会话开始都出；其余提醒每个会话每个文件只触发一次，状态放在 `${CLAUDE_PLUGIN_DATA}`，没设就放 `$TMPDIR`，以会话 id 或日期为键。
 
 会话开始时：
 
 - 项目里有存档文件的话，告诉 Claude 精简版要通读，存档只在顺着 `(record §N)` 找的时候才 grep
 - `CLAUDE.md`、`AGENTS.md`、`.claude/` 下的文件或匹配 `docGlobs` 的文件，行数超过 `bigDocLines` 或体积超过 `bigDocBytes`、又没有存档的话，建议拆
-- 某个精简版自上次 `/doc-diet:check` 以来，改动过的提交数达到 `measureAfterCommits` 的话，建议再查一次
+- 某个精简版自上次 `/doc-diet:check` 以来，改动过的提交数达到 `measureAfterCommits` 的话，建议再查一次（只看前 20 个精简版）
 
 Edit、Write 或 MultiEdit 之后：
 
@@ -57,7 +57,7 @@ Edit、Write 或 MultiEdit 之后：
 
 `/doc-diet:check` 通过 `scripts/mark-checked.mjs` 把运行当时的 commit 存进 `.doc-diet/last-check.json`。这个文件提交或忽略都行。启动时最多扫 6 层目录，跳过 `node_modules`、`.git`、`dist`、`build`、`.next`、`.venv`、`vendor` 和 `target`，5,000 个文件的目录树大约要 50 ms。
 
-设置放在项目根目录的 `.doc-diet.json`。所有键都可选：
+设置放在项目根目录的 `.doc-diet.json`。所有键都可选。下面是示例，不是默认值；`decisionGlobs` 不设就是空的：
 
 ```json
 { "recordSuffix": ".record.md", "maxHeadLines": 300, "bigDocLines": 300, "bigDocBytes": 30000,

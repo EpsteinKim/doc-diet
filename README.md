@@ -34,7 +34,7 @@ Ask Claude to split a file and this skill takes over. It copies the original to 
 What the head should have had: the delete-permission rule.
 ```
 
-You supply the questions, or point it at a decisions file and let it pick some. Questions about things that went wrong before work best. Generating them automatically is planned for 0.2.0.
+You supply the questions, or point it at a decisions file and let it pick some. Questions about things that went wrong before work best. Generating them with no decisions file is planned for 0.2.0.
 
 ### keep-heads-fresh
 
@@ -42,13 +42,13 @@ Three rules: when you record a decision, put it in the head in the same turn; wh
 
 ## Hooks
 
-Two hooks. Each adds one line of context and never touches a file. They need `node` on PATH and stay silent without it. Each one fires once per session per file, with state kept in `${CLAUDE_PLUGIN_DATA}` or, if that is unset, `$TMPDIR`, keyed by session id or by date.
+Two hooks. They add a few lines of context and never touch a file. They need `node` on PATH and stay silent without it. The record reminder comes every session start; every other nudge fires once per session per file, with state kept in `${CLAUDE_PLUGIN_DATA}` or, if that is unset, `$TMPDIR`, keyed by session id or by date.
 
 When a session starts:
 
 - if the project has record files, Claude is told to read heads in full and to grep a record only when following a `(record §N)` pointer
 - if `CLAUDE.md`, `AGENTS.md`, a file under `.claude/`, or a `docGlobs` match is longer than `bigDocLines` or bigger than `bigDocBytes` and has no record, it suggests a split
-- if a head has changed in `measureAfterCommits` or more commits since its last `/doc-diet:check`, it suggests checking again
+- if a head has changed in `measureAfterCommits` or more commits since its last `/doc-diet:check`, it suggests checking again (it looks at the first 20 heads only)
 
 After Edit, Write or MultiEdit:
 
@@ -57,7 +57,7 @@ After Edit, Write or MultiEdit:
 
 `/doc-diet:check` saves the commit it ran at in `.doc-diet/last-check.json` via `scripts/mark-checked.mjs`. Commit that file or ignore it. The startup scan goes 6 directories deep, skips `node_modules`, `.git`, `dist`, `build`, `.next`, `.venv`, `vendor` and `target`, and takes around 50 ms on a 5,000-file tree.
 
-Settings live in `.doc-diet.json` at the project root. All keys are optional:
+Settings live in `.doc-diet.json` at the project root. All keys are optional. This is an example, not the defaults; `decisionGlobs` is empty unless you set it:
 
 ```json
 { "recordSuffix": ".record.md", "maxHeadLines": 300, "bigDocLines": 300, "bigDocBytes": 30000,

@@ -1,67 +1,45 @@
-# doc-diet — 만들 것 (설계 메모)
+# Design notes
 
-> 이 파일은 이 폴더에서 새로 여는 Claude Code 세션이 처음 읽는 설계 메모다. README 는 기능이 생긴 뒤에 쓴다.
-> 원래 사용한 프로젝트의 파일, 이름, 데이터는 이 저장소에 하나도 가져오지 않는다 — 방법만 가져온다.
+Notes for whoever works on this next, including a Claude session opened in this folder. The README is for people installing it. No files from the project where the method was first used are in this repo.
 
-## 한 줄
-AI 에이전트가 읽는 문서(`CLAUDE.md`, 에이전트 지식 문서)를 **무손실로 줄이고**, 줄인 문서만 읽은 새 에이전트가
-**여전히 맞게 답하는지 잰다**.
+## The problem
 
-## 왜
-- 오래 쓴 프로젝트는 에이전트 문서가 수천 줄로 불어난다(경위, 실측, 이미 고친 버그 이야기).
-- 매 세션/서브에이전트가 통째로 읽어 느리고 컨텍스트가 일찍 찬다. 규칙이 경위에 묻힌다.
-- 요약하면 「무엇을 잃었나」「요약이 맞나」를 알 수 없다. 이 둘을 기계로 답하는 게 이 플러그인이다.
+Agent docs grow until every session reads thousands of lines of history before doing any work. If you summarise them, you can't tell what was dropped. doc-diet keeps the original as a byte copy, writes a short head, and runs an agent against the head to see what it misses.
 
-## 기능 (0.1.0)
+## Decisions
 
-### 1. 문서 나누기 — 스킬 `split-doc`
-1. 원본을 `<이름>.기록.md`(영어 쓰는 사용자는 `<name>.record.md`)로 **바이트 그대로** 복사한다. 머리말도 붙이지 않는다.
-2. `<이름>.md` 를 150~300줄 앞머리로 **새로 쓴다**: 지금도 참인 규칙, 함정, 결정, 열린 일, 시험이 덮는 범위.
-   각 줄 끝에 근거 `(기록 §N)`. 경위/실측 표/줄 그은 판정은 넣지 않는다. 첫 두 줄에 「원래 절 번호와
-   다른 문서의 `<이름>.md §N` 인용은 기록 파일 기준」이라고 적는다.
-3. 확인(스크립트 `scripts/verify-split.sh`): `cmp` 기록 ↔ 원본 사본(출력 없어야 통과), 앞머리의 백틱 이름이
-   코드나 원본에 실제로 있는지 grep.
-4. 보고: 앞머리 줄 수/바이트, 원본 대비 비율, 앞머리에서 뺀 것 중 애매한 것, **원본 문장이 코드와 어긋나 보인 곳**
-   (앞머리엔 안 넣고 목록으로), 다른 파일의 인용 목록.
+- The record is a plain copy of the original, with no header prepended. `cmp` is the whole proof; a header would mean the verify step needs a parser instead.
+- The head is rewritten from scratch, not trimmed. Deleting paragraphs from a 4,000-line doc keeps the old doc's shape. Writing 150-300 lines with a `(record §N)` pointer on each means every line gets rechecked against the record.
+- Citations in other documents (`<name>.md §N`, old section numbers) resolve to the record. Renumbering them across a repo touches too many files to do safely, so the head says so in its first two lines.
+- `doc-tester` answers from the head alone and marks each answer in-head / not / ambiguous before it is told it may open the code or the record. If it could grep the code while answering, the head would never be tested.
+- Questions come from the user, or `/doc-diet:check` proposes some from a decisions file the user names. Made-up questions tend to be easy for the head; past mistakes make better ones. Generating questions with no file to draw from is 0.2.0.
+- Hooks only add context. A hook that edits docs on its own is hard to predict. The record reminder appears on every session start; every other nudge appears once per session per file. The "changed since last check" scan looks at the first 20 heads only, to keep session start cheap on repos with many. Without `node` the hooks print nothing.
+- `recordSuffix` is configurable because teams name these files in their own language. `.record.md` is the default; `.기록.md` is what the first project uses.
 
-### 2. 이해도 측정 — 명령 `/doc-diet:check`
-1. 새 에이전트(측정 전용 agent)가 앞머리만 읽는다. 기록은 이 단계에서 금지. 시작/끝 시각, 읽은 바이트를 적는다.
-2. 답이 정해진 질문 3~7개를 앞머리만으로 답한다. 답마다 「앞머리에 있었다/없었다/애매」.
-3. 그다음 코드와 기록을 찾아 채점: 맞음/부분/틀림, 틀리면 맞는 답 한 줄.
-4. 출력: 표 + 「앞머리에 있었으면 좋았을 것」 한두 줄 → 사용자가 앞머리를 고친다.
-- 질문은 사용자가 주거나, 결정 기록 문서를 가리키면 거기서 뽑는다(자동 생성은 0.2.0 목표).
+## What exists (0.1.0)
 
-### 3. 세션 시작 알림 — `hooks/hooks.json` (SessionStart)
-「앞머리는 끝까지 읽고, `*.기록.md` 는 앞머리의 `(기록 §N)` 이 필요할 때만 grep」 한 줄을 넣는다.
-경로는 `${CLAUDE_PLUGIN_ROOT}` 로.
+| Piece | File | Does |
+|---|---|---|
+| split | `skills/split-doc/SKILL.md` | copy original to record, write head, run the verify script |
+| verify | `scripts/verify-split.sh` | `cmp` record vs original; grep each backticked name in the head against record and code |
+| check | `commands/check.md` + `agents/doc-tester.md` | read head only, answer, then grade against code and record |
+| mark | `scripts/mark-checked.mjs` | write `.doc-diet/last-check.json` so the "time to measure" nudge resets |
+| nudges | `hooks/hooks.json` + `scripts/nudge.sh` + `scripts/nudge.mjs` | SessionStart and PostToolUse context lines; see README |
+| upkeep | `skills/keep-heads-fresh/SKILL.md` | decision into head same turn; strike through, don't delete; 300-line cap |
 
-### 4. 유지 규칙 — 스킬 문서 (선택)
-- 결정을 기록하는 그 턴에 관련 앞머리에도 넣는다(앞머리가 하루 전 규칙으로 남는 것을 막는다).
-- 틀린 판정은 기록에서 줄을 그어 남긴다. 앞머리는 300줄 상한.
-- 여러 서브에이전트를 쓰는 경우: 영역별 상주 담당, 컨텍스트 절반이면 문서로 넘겨 교체, 방향이 바뀌면 정정은 한 번만.
+Config keys and defaults live in `scripts/nudge.mjs` (`C`), and the README must match them. When one changes, change the other in the same commit.
 
-## 실제로 써 본 결과 (README 에 익명으로 넣을 숫자)
-업무용 웹 앱 하나, 영역 문서 11개 + 공통 문서(가장 큰 것 4,400줄)에 손으로 적용했다.
-- 담당이 처음 읽는 양: 약 44만 바이트 → 약 7만 바이트(약 1/6). 세 문서를 2~5초에 읽고 시작.
-- 측정 3번에서 앞머리에 빠진 중요한 규칙 2개를 찾음(요약하다 빠진 예외 하나, 앞머리에 아직 안 들어간 하루 전 결정 하나).
+## Not done yet
 
-## 비슷한 것과 차이
-- `agent-md-refactor`(softaworks/agent-toolkit): 큰 문서를 링크된 파일로 나눈다. 정리하며 지우고, 검증이 없다.
-- `claude-token-diet`(MUKE-coder): 토큰 절감 설정 묶음(거부 규칙, CLAUDE.md 슬림화, LSP 등). 이름이 비슷하다 — README 에서 차이를 밝힐 것.
-- claude-mem / Mem0 / Hindsight: 대화와 작업 기록 메모리. 대상이 다르다.
-- **doc-diet 만의 것**: 무손실 보관 + `cmp` 증명, 새 에이전트 이해도 측정과 채점, 문서-코드 어긋남 목록.
+- Generating questions without a decisions file (0.2.0).
+- A check that each `(record §N)` pointer in a head points at a section that exists in the record.
+- Measuring the head's byte count and read time from outside the agent instead of trusting its self-report.
+- Tests for `nudge.mjs`. It was exercised by hand on one repo with about 5,000 files.
 
-## 구조
-```
-.claude-plugin/plugin.json, marketplace.json
-skills/split-doc/SKILL.md
-commands/check.md
-agents/doc-tester.md
-hooks/hooks.json
-scripts/verify-split.sh
-```
+## Numbers that were measured once
 
-## 시험 방법
-`claude --plugin-dir ~/Desktop/doc-diet` 로 큰 문서가 있는 프로젝트에 붙여 나누기 → 측정을 돌리고, 손으로 했을 때의
-숫자와 비교한다. 배포는 GitHub 저장소 + `/plugin marketplace add <owner>/doc-diet`, `/plugin install doc-diet@doc-diet`
-(실제로 한 번 설치해 보고 README 에 적는다).
+On the first project (11 area docs plus a shared one, largest 4,400 lines): startup reading for an area agent fell from about 440 KB to about 70 KB; three heads read in 2-5 seconds each; the third check round found two rules missing from heads. These are in the README. If they are re-measured, update both places.
+
+## Working on this repo
+
+`claude --plugin-dir /path/to/doc-diet` loads it without installing. The marketplace is this repo itself (`.claude-plugin/marketplace.json`); `/plugin marketplace add EpsteinKim/doc-diet` then `/plugin install doc-diet@doc-diet` is the install path and has been run once end to end. Bump `version` in both `plugin.json` and `marketplace.json` together.

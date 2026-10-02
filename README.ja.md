@@ -34,7 +34,7 @@ Claude にファイルを分けるよう頼むと、このスキルが引き受�
 What the head should have had: the delete-permission rule.
 ```
 
-質問は自分で渡すか、決定をまとめたファイルを指してそこから選ばせる。前に一度間違えたことについての質問がいちばん効く。自動生成は 0.2.0 で入れる予定。
+質問は自分で渡すか、決定をまとめたファイルを指してそこから選ばせる。前に一度間違えたことについての質問がいちばん効く。決定ファイルなしで質問を作るのは 0.2.0 で入れる予定。
 
 ### keep-heads-fresh
 
@@ -42,13 +42,13 @@ What the head should have had: the delete-permission rule.
 
 ## フック
 
-フックは二つある。それぞれコンテキストを 1 行足すだけで、ファイルには触らない。PATH に `node` が必要で、なければ何もしない。通知はセッションごと、ファイルごとに 1 回だけ。状態は `${CLAUDE_PLUGIN_DATA}`（未設定なら `$TMPDIR`）に、セッション ID か日付をキーにして保存する。
+フックは二つある。コンテキストを数行足すだけで、ファイルには触らない。PATH に `node` が必要で、なければ何もしない。記録ファイルの案内はセッション開始のたびに出て、それ以外の通知はセッションごと、ファイルごとに 1 回だけ。状態は `${CLAUDE_PLUGIN_DATA}`（未設定なら `$TMPDIR`）に、セッション ID か日付をキーにして保存する。
 
 セッション開始時:
 
 - プロジェクトに記録ファイルがあれば、短縮版は全部読み、記録は `(record §N)` をたどるときだけ grep するよう Claude に伝える
 - `CLAUDE.md`、`AGENTS.md`、`.claude/` 以下のファイル、または `docGlobs` に合うファイルが `bigDocLines` より長いか `bigDocBytes` より大きく、記録がなければ、分割を提案する
-- ある短縮版を前回 `/doc-diet:check` してから、そのファイルに触れたコミットが `measureAfterCommits` 回以上あれば、もう一度確認するよう提案する
+- ある短縮版を前回 `/doc-diet:check` してから、そのファイルに触れたコミットが `measureAfterCommits` 回以上あれば、もう一度確認するよう提案する（見るのは短縮版 20 本まで）
 
 Edit、Write、MultiEdit のあと:
 
@@ -57,7 +57,7 @@ Edit、Write、MultiEdit のあと:
 
 `/doc-diet:check` は実行時点のコミットを `scripts/mark-checked.mjs` 経由で `.doc-diet/last-check.json` に保存する。このファイルはコミットしても無視してもいい。開始時のスキャンはディレクトリ 6 階層まで、`node_modules`、`.git`、`dist`、`build`、`.next`、`.venv`、`vendor`、`target` は飛ばし、5,000 ファイルのツリーで 50 ms ほどかかる。
 
-設定はプロジェクトルートの `.doc-diet.json` に置く。キーはすべて任意。
+設定はプロジェクトルートの `.doc-diet.json` に置く。キーはすべて任意。下は既定値ではなく例で、`decisionGlobs` は設定しなければ空。
 
 ```json
 { "recordSuffix": ".record.md", "maxHeadLines": 300, "bigDocLines": 300, "bigDocBytes": 30000,
