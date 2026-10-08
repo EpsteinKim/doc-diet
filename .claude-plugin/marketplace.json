@@ -8,7 +8,7 @@
       "name": "doc-diet",
       "source": "./",
       "description": "Slim agent docs losslessly and measure that the slim version still works.",
-      "version": "0.1.0"
+      "version": "0.2.0"
     }
   ],
   "metadata": {

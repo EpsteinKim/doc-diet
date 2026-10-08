@@ -1,6 +1,6 @@
 {
   "name": "doc-diet",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Slim down agent docs (CLAUDE.md, knowledge files) into a short required head plus a byte-identical record, then measure whether a fresh agent still answers correctly from the head alone.",
   "author": { "name": "YeongSin" },
   "license": "MIT",

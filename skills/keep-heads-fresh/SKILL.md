@@ -15,7 +15,7 @@ Applies to projects using doc-diet (a head `<name>.md` plus a record `<name>.rec
 
 ## Hook nudges
 
-doc-diet hooks may add context lines ("head is over the cap", "a decision was recorded", "N commits since last check", "doc X has no record"). They only suggest. Act on them at a natural moment: do the head edit yourself for the first two; for the others tell the user and let them choose. Settings live in `.doc-diet.json` (see README).
+doc-diet hooks may add context lines ("head is over the cap", "a decision was recorded", "N commits since last check", "doc X has no record", "set recordSuffix"). They only suggest. Act on them at a natural moment: do the head edit yourself for the first two; for the others tell the user and let them choose. One hook does more: if a decision file was edited this session and no head was, the first stop is refused with that reason. Put the rule into the head then, or answer in one line why no head changes; the next stop goes through. Settings live in `.doc-diet.json` (see README).
 
 ## Optional: several subagents per area
 

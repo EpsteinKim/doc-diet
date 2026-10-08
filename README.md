@@ -32,7 +32,7 @@ claude --plugin-dir /path/to/doc-diet
 ### 1. `split-doc` (the split skill)
 
 Tell Claude "split this doc" and this skill kicks in.
-It copies the original to `<name>.record.md`, writes a fresh head in the file's place, and runs `scripts/verify-split.sh`, which checks two things: that the backup is identical to the original (`cmp`), and that every backticked name in the head (file names, functions, config keys) actually exists in the original or in your code. In other words, that the AI didn't invent a name.
+It copies the original to `<name>.record.md`, writes a fresh head in the file's place, and runs `scripts/verify-split.sh`, which fails on three things: the backup differs from the original (`cmp`), the head is over 300 lines, or a `(record §N)` pointer names a section the record does not have. It also warns about every backticked name in the head (file names, functions, config keys) that your code does not have as a whole word. The record does not count there: a name the code deleted is still in the record, and that stale line is the one this check exists for.
 
 ### 2. `/doc-diet:check` (the quiz)
 
@@ -54,7 +54,7 @@ A read-only agent called `doc-tester` reads just the head and answers your quest
 What the head should have had: the delete-permission rule.
 ```
 
-You give the questions, or point it at a decisions file and let it pick some. Generating questions with no decisions file is planned for 0.2.0.
+You give the questions, or it samples them from your decision files (`decisionGlobs`, `docs/decisions/*.md` by default): one numbered section is one question, and the section body is the known answer. The score goes into `.doc-diet/last-check.json`, so you can see how each head has been doing.
 
 *Tip: questions about edge cases the AI already got wrong once work really well.*
 
@@ -75,17 +75,22 @@ Hooks that slip a few lines of context to the agent while it works. They never t
 * If the project has `.record.md` files, Claude is told to read heads in full and grep the original only when following a `(record §N)` pointer. This one shows up every session.
 * If `CLAUDE.md`, `AGENTS.md` or anything under `.claude/` is too big (over 300 lines or 30 KB by default) and has no backup, it suggests splitting.
 * If a head has piled up 5 or more commits since it was last checked, it drops a hint to run `/doc-diet:check`. It looks at the first 20 heads only.
+* If there is no `.doc-diet.json` but the project has `.md` files paired as `<name>.md` plus `<name>.<something>.md`, it says which `recordSuffix` to set. Otherwise a project that names records `.기록.md` gets no nudge at all and never learns why.
 
 **Right after a doc is edited (Edit/Write):**
 
 * If a head goes over the line limit (300 by default), it says so.
 * If a decisions doc listed in `decisionGlobs` was edited, it reminds Claude to put the rule into the head this turn.
 
+**When Claude is about to stop:**
+
+* If a decisions doc was edited this session and no head was, the first stop is refused with the reason, so the rule gets into a head now (or Claude says in one line why no head changes). The second stop goes through.
+
 Apart from the "this project has records" line, each nudge fires once per session per file. Running `/doc-diet:check` writes the current commit to `.doc-diet/last-check.json`, which resets the commit count. Commit that file or gitignore it, either is fine.
 
 ## ⚙️ Settings (`.doc-diet.json`)
 
-Put a `.doc-diet.json` in the project root to change the defaults. Every key is optional, and this is an example (`decisionGlobs` is empty unless you set it).
+Put a `.doc-diet.json` in the project root to change the defaults. Every key is optional, and these are the defaults.
 
 ```json
 {
